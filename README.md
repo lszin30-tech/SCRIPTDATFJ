@@ -1,6 +1,6 @@
 --[[
-    NEXUS · Hitbox Universal
-    Prime Dash / qualquer jogo player vs player
+    TFJ · Hitbox Universal
+    Roblox / qualquer jogo player vs player
     H            -> liga/desliga a hitbox
     RightShift   -> esconde/mostra o menu
 ]]
