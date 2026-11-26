@@ -39,7 +39,7 @@ local Config = {
 
 local Theme = {
     Bg = Color3.fromRGB(16, 17, 21),
-    Panel = Color3.fromRGB(22, 23, 29),
+    Panel = Color3.fromRGB(255, 0, 0),
     Element = Color3.fromRGB(30, 32, 40),
     Stroke = Color3.fromRGB(46, 49, 61),
     Text = Color3.fromRGB(235, 237, 242),
@@ -161,7 +161,7 @@ end
 -- gui raiz
 ----------------------------------------------------------------------
 local Gui = create("ScreenGui", {
-    Name = "Nexus" .. tostring(math.random(10000, 99999)),
+    Name = "TFJ" .. tostring(math.random(10000, 99999)),
     ResetOnSpawn = false,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     IgnoreGuiInset = true,
@@ -238,7 +238,7 @@ create("Frame", {
 }, Header)
 
 create("TextLabel", {
-    Text = 'NEXUS  <font color="#8C92A0">Hitbox · Prime Dash</font>',
+    Text = 'TFJ  <font color="#FF0000">Hitbox · Roblox</font>',
     RichText = true,
     Font = Enum.Font.GothamBold,
     TextSize = 14,
