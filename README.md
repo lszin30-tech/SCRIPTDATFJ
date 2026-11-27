@@ -242,7 +242,7 @@ do
 	}, kw)
 
 	local ok = new("TextButton", {
-		Text = "ENTRAR", Size = UDim2.new(1, -40, 0, 36), Position = UDim2.fromOffset(20, 224), BackgroundColor3 = KC.red,
+		Text = "ENTRAR", Size = UDim2.new(0, 0, 0, 0), Position = UDim2.fromOffset(20, 224), BackgroundColor3 = KC.red,
 		TextColor3 = WHITE, Font = Enum.Font.GothamBlack, TextSize = 14, AutoButtonColor = false,
 	}, kw)
 	corner(ok, 8)
@@ -254,7 +254,7 @@ do
 	}, kw)
 	corner(x, 6)
 	new("TextLabel", {
-		Text = "made by nexus", Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 1, -17), BackgroundTransparency = 1,
+		Text = "made by diretoria", Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 1, -17), BackgroundTransparency = 1,
 		TextColor3 = KC.dim, Font = Enum.Font.Gotham, TextSize = 10,
 	}, kw)
 
