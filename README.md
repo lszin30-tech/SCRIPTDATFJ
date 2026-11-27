@@ -1,4 +1,4 @@
--- XIT DA FACÇÃO v4.0 | delta | vermelho & preto | TFJ
+-- XIT DA FACÇÃO v4.1 | delta | vermelho & preto | TFJ
 local cloneref = cloneref or function(o) return o end
 local function svc(n) return cloneref(game:GetService(n)) end
 local Players, RunService, UIS, TweenService = svc("Players"), svc("RunService"), svc("UserInputService"), svc("TweenService")
@@ -261,7 +261,7 @@ do
 
 	local ok = new("TextButton", {
 		Text = "ENTRAR", Size = UDim2.new(1, -40, 0, 36), Position = UDim2.fromOffset(20, 224), BackgroundColor3 = KC.red,
-		TextColor3 = WHITE, Font = Enum.Font.GothamBlack, TextSize = 14, AutoButtonColor = false,
+		TextColor3 = BLACK, Font = Enum.Font.GothamBlack, TextSize = 14, AutoButtonColor = false,
 	}, kw)
 	corner(ok, 8)
 	new("UIGradient", {Rotation = 90, Color = ColorSequence.new(RED, KC.dark)}, ok)
@@ -1010,7 +1010,7 @@ new("TextLabel", {
 	TextXAlignment = Enum.TextXAlignment.Left,
 }, top)
 new("TextLabel", {
-	Text = "TFJ  •  DELTA  •  v4.0", Size = UDim2.fromOffset(200, 14), Position = UDim2.fromOffset(54, 26),
+	Text = "TFJ  •  DELTA  •  v4.1", Size = UDim2.fromOffset(200, 14), Position = UDim2.fromOffset(54, 26),
 	BackgroundTransparency = 1, TextColor3 = C.red, Font = Enum.Font.GothamBold, TextSize = 10,
 	TextXAlignment = Enum.TextXAlignment.Left,
 }, top)
@@ -1101,7 +1101,7 @@ local fpsLbl = new("TextLabel", {
 	TextColor3 = C.red, Font = Enum.Font.GothamBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
 }, sidebar)
 new("TextLabel", {
-	Text = "made by nexus", Size = UDim2.new(1, -16, 0, 16), Position = UDim2.new(0, 8, 1, -22), BackgroundTransparency = 1,
+	Text = "BONDE BATE E RODA", Size = UDim2.new(1, -16, 0, 16), Position = UDim2.new(0, 8, 1, -22), BackgroundTransparency = 1,
 	TextColor3 = C.dim, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left,
 }, sidebar)
 
@@ -1282,7 +1282,7 @@ end
 
 local function button(parent, name, cb)
 	local b = new("TextButton", {
-		Text = name, Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.red, TextColor3 = WHITE,
+		Text = name, Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.red, TextColor3 = BLACK,
 		Font = Enum.Font.GothamBlack, TextSize = 13, AutoButtonColor = false, LayoutOrder = nextOrder(parent),
 	}, parent)
 	corner(b, 7)
