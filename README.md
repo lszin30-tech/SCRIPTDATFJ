@@ -1,4 +1,4 @@
--- XIT DA FACÇÃO v4.1 | delta | vermelho & preto | TFJ
+-- XIT DA FACÇÃO v4.2 | delta | vermelho & preto | TFJ
 local cloneref = cloneref or function(o) return o end
 local function svc(n) return cloneref(game:GetService(n)) end
 local Players, RunService, UIS, TweenService = svc("Players"), svc("RunService"), svc("UserInputService"), svc("TweenService")
@@ -39,7 +39,7 @@ local S = {
 	aimOn = false, aimMode = 1, aimPart = 1, aimSmooth = 40, aimFov = 150, aimShowFov = true, aimFovColor = 1,
 	aimDist = 1000, aimTeam = true, aimWall = true, aimPredOn = false, aimPred = 0.12,
 	hbOn = false, hbW = 8, hbH = 8, hbTrans = 0.7, hbColor = 1, hbTeam = true,
-	hhOn = false, hhSize = 5, hhVisual = true, hhTrans = 0.5, hhColor = 1, hhHide = true, hhTeam = true,
+	hsOn = false, hsSize = 6, hsHeight = 1, hsMode = 1, hsTrans = 0.5, hsColor = 1, hsPaint = false, hsTeam = true, hsDist = 500,
 	espOn = false, espFps = 90, espMaxDist = 2000, espTeam = true, espTeamColor = false, espColor = 1,
 	espBox = true, espBoxStyle = 1, espFill = false, espFillOp = 0.15,
 	espName = true, espDist = true, espHealth = true, espWeapon = false, espTextSize = 13,
@@ -58,7 +58,7 @@ local S = {
 	-- troll v4
 	invisOn = false, invisAlpha = 1, invisName = true, nofall = false, bhop = false, zoomInf = false,
 	clickTp = false, orbitOn = false, orbitSpeed = 2, orbitDist = 8, followOn = false, followDist = 5,
-	freecam = false, fcSpeed = 60, thirdP = false,
+	freecam = false, fcSpeed = 60, thirdP = false, godOn = false,
 	-- otimizacao
 	opLow = false, opQuality = 1, opNoShadow = false, opNoFx = false, opNoPart = false, opNoLight = false,
 	opNoTex = false, opPlastic = false, opNoSound = false, opWater = false, opNoGrass = false,
@@ -272,7 +272,7 @@ do
 	}, kw)
 	corner(x, 6)
 	new("TextLabel", {
-		Text = "BONDE BATE E RODA", Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 1, -17), BackgroundTransparency = 1,
+		Text = "bonde bate e roda", Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 1, -17), BackgroundTransparency = 1,
 		TextColor3 = KC.dim, Font = Enum.Font.Gotham, TextSize = 10,
 	}, kw)
 
@@ -411,7 +411,9 @@ local function setSphere(head, on, radius, trans, color)
 	end
 end
 local function hitStep()
-	local anyOn = S.hbOn or S.hhOn
+	local anyOn = S.hbOn or S.hsOn
+	local cam = getCam()
+	local cpos = cam and cam.CFrame.Position
 	if not anyOn and not dirty then return end
 	dirty = anyOn
 	for _, p in ipairs(plist) do
@@ -425,10 +427,14 @@ local function hitStep()
 			end
 			local head = i.head
 			if head then
-				if S.hhOn and alive and isEnemy(p, S.hhTeam) then
-					local sz = S.hhSize
-					expand(head, Vector3.new(sz, sz, sz), S.hhHide and 1 or nil, nil)
-					setSphere(head, S.hhVisual, sz / 2, S.hhTrans, col(S.hhColor))
+				local inRange = not cpos or (i.root.Position - cpos).Magnitude <= S.hsDist
+				if S.hsOn and alive and inRange and isEnemy(p, S.hsTeam) then
+					local sz = S.hsSize
+					local mode = S.hsMode
+					local trans = (mode == 2) and S.hsTrans or 1
+					local paint = (mode == 2 and S.hsPaint) and col(S.hsColor) or nil
+					expand(head, Vector3.new(sz, sz * S.hsHeight, sz), trans, paint)
+					setSphere(head, mode == 3, math.max(sz, sz * S.hsHeight) / 2, S.hsTrans, col(S.hsColor))
 				else
 					restore(head)
 					setSphere(head, false)
@@ -1010,7 +1016,7 @@ new("TextLabel", {
 	TextXAlignment = Enum.TextXAlignment.Left,
 }, top)
 new("TextLabel", {
-	Text = "TFJ  •  DELTA  •  v4.1", Size = UDim2.fromOffset(200, 14), Position = UDim2.fromOffset(54, 26),
+	Text = "TFJ  •  DELTA  •  v4.2", Size = UDim2.fromOffset(200, 14), Position = UDim2.fromOffset(54, 26),
 	BackgroundTransparency = 1, TextColor3 = C.red, Font = Enum.Font.GothamBold, TextSize = 10,
 	TextXAlignment = Enum.TextXAlignment.Left,
 }, top)
@@ -1101,7 +1107,7 @@ local fpsLbl = new("TextLabel", {
 	TextColor3 = C.red, Font = Enum.Font.GothamBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
 }, sidebar)
 new("TextLabel", {
-	Text = "BONDE BATE E RODA", Size = UDim2.new(1, -16, 0, 16), Position = UDim2.new(0, 8, 1, -22), BackgroundTransparency = 1,
+	Text = "bonde bate e roda", Size = UDim2.new(1, -16, 0, 16), Position = UDim2.new(0, 8, 1, -22), BackgroundTransparency = 1,
 	TextColor3 = C.dim, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left,
 }, sidebar)
 
@@ -1690,6 +1696,44 @@ function M.spectate(on)
 end
 onCleanup(function() M.spectate(false) end)
 
+---------------------------------------------------------------- GOD MODE
+do
+	local conn, curHum, ff
+	local function detach()
+		if conn then conn:Disconnect(); conn = nil end
+		if ff then ff:Destroy(); ff = nil end
+		if curHum then
+			local h = curHum
+			curHum = nil
+			pcall(function() h:SetStateEnabled(Enum.HumanoidStateType.Dead, true) end)
+		end
+	end
+	local function attach(hum, ch)
+		detach()
+		curHum = hum
+		pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false) end)
+		conn = hum:GetPropertyChangedSignal("Health"):Connect(function()
+			if S.godOn and hum.Health > 0 and hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end
+		end)
+		ff = Instance.new("ForceField")
+		ff.Visible = false
+		ff.Parent = ch
+	end
+	function M.godStep()
+		if not S.godOn then
+			if curHum then detach() end
+			return
+		end
+		local ch = LP.Character
+		local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+		if not hum then return end
+		if curHum ~= hum then attach(hum, ch) end
+		if hum.Health > 0 and hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end
+		if ff and ff.Parent ~= ch then ff.Parent = ch end
+	end
+	onCleanup(detach)
+end
+
 ---------------------------------------------------------------- OTIMIZAÇÃO
 do
 	local cats = {"part", "tex", "fx", "light", "snd", "acc", "post", "water", "grass"}
@@ -1950,14 +1994,17 @@ local function buildCombate()
 	cycle(cB, "Cor da hitbox", "hbColor", COLOR_NAMES)
 	toggle(cB, "Ignorar meu time", "hbTeam")
 
-	local cH = card("HITHEAD (CABEÇA)")
-	toggle(cH, "HitHead", "hhOn")
-	slider(cH, "Tamanho da cabeça", "hhSize", 1.5, 25, 0.5)
-	toggle(cH, "Esfera visível", "hhVisual")
-	slider(cH, "Transparência da esfera", "hhTrans", 0, 1, 0.05)
-	cycle(cH, "Cor da esfera", "hhColor", COLOR_NAMES)
-	toggle(cH, "Esconder cabeça original", "hhHide")
-	toggle(cH, "Ignorar meu time", "hhTeam")
+	local cH = card("HEAD SIZE (CABEÇA GRANDE)")
+	toggle(cH, "Head Size", "hsOn")
+	slider(cH, "Tamanho da cabeça", "hsSize", 2, 40, 0.5, " st")
+	slider(cH, "Altura (multiplicador)", "hsHeight", 0.5, 2, 0.05, "x")
+	cycle(cH, "Visual", "hsMode", {"Invisível", "Cabeça visível", "Esfera marcada"})
+	slider(cH, "Transparência", "hsTrans", 0, 1, 0.05)
+	toggle(cH, "Pintar a cabeça", "hsPaint")
+	cycle(cH, "Cor (pintura/esfera)", "hsColor", COLOR_NAMES)
+	slider(cH, "Distância máxima", "hsDist", 50, 3000, 50, "m")
+	toggle(cH, "Ignorar meu time", "hsTeam")
+	status(cH, "Aumenta só a cabeça dos inimigos. Fora da distância ou desligado, ela volta ao normal.", 48)
 
 	local d1 = card("DANO POR HIT")
 	toggle(d1, "Dano turbinado", "dmgOn", function(v)
@@ -2026,6 +2073,10 @@ local function buildTroll()
 	slider(t3, "Força do pulo", "jump", 50, 300, 5)
 	toggle(t3, "Pulo infinito", "infJump")
 	toggle(t3, "Bhop (pular andando)", "bhop")
+
+	local tG = card("GOD MODE")
+	toggle(tG, "God Mode (imortal)", "godOn")
+	status(tG, "Mantém a vida cheia, bloqueia a morte e coloca um ForceField local. Só funciona onde o jogo deixa o cliente mexer na vida; dano feito direto pelo servidor pode passar.", 72)
 
 	local tI = card("INVISÍVEL")
 	toggle(tI, "Invisível", "invisOn")
@@ -2196,6 +2247,7 @@ track(RunService.Heartbeat:Connect(function(dt)
 		if S.reachOn or reachH then pcall(reachStep) end
 	end
 	pcall(movStep, dt)
+	if S.godOn then pcall(M.godStep) end
 end))
 
 RunService:BindToRenderStep("XitAim", Enum.RenderPriority.Camera.Value + 1, function(dt)
