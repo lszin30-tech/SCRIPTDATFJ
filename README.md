@@ -1,4 +1,4 @@
--- XIT DA FACÇÃO v3.2 | delta | vermelho & preto | TFJ
+-- XIT DA FACÇÃO v4.0 | delta | vermelho & preto | TFJ
 local cloneref = cloneref or function(o) return o end
 local function svc(n) return cloneref(game:GetService(n)) end
 local Players, RunService, UIS, TweenService = svc("Players"), svc("RunService"), svc("UserInputService"), svc("TweenService")
@@ -52,10 +52,24 @@ local S = {
 	dmgOn = false, dmgMode = 2, dmgWant = 40, dmgBase = 10, dmgReach = 15, dmgTeam = true,
 	teamPick = "—", teamLocal = false, plPick = "—",
 	fullbright = false, noFog = false, clockOn = false, clockT = 14,
+	-- combate v4
+	aimTarget = 1, aimSticky = false, aimYOff = 0, aimLine = false, ignFriends = false,
+	trigOn = false, trigDelay = 0.12, clickOn = false, clickRate = 0.1, reachOn = false, reachSize = 12,
+	-- troll v4
+	invisOn = false, invisAlpha = 1, invisName = true, nofall = false, bhop = false, zoomInf = false,
+	clickTp = false, orbitOn = false, orbitSpeed = 2, orbitDist = 8, followOn = false, followDist = 5,
+	freecam = false, fcSpeed = 60, thirdP = false,
+	-- otimizacao
+	opLow = false, opQuality = 1, opNoShadow = false, opNoFx = false, opNoPart = false, opNoLight = false,
+	opNoTex = false, opPlastic = false, opNoSound = false, opWater = false, opNoGrass = false,
+	opHideAcc = false, opFpsCap = false, opCap = 60, opNo3D = false,
+	uiAnim = true, uiFps = true, uiScaleMul = 1,
 }
 
 ---------------------------------------------------------------- HELPERS
+local friends = {}
 local function isEnemy(p, check)
+	if S.ignFriends and friends[p] then return false end
 	if not check then return true end
 	if not LP.Team or not p.Team then return true end
 	return p.Team ~= LP.Team
@@ -71,6 +85,10 @@ local function stroke(i, c, t, tr)
 	return new("UIStroke", {Color = c, Thickness = t or 1, Transparency = tr or 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border}, i)
 end
 local function tw(i, props, t)
+	if not S.uiAnim then
+		for k, v in pairs(props) do i[k] = v end
+		return
+	end
 	TweenService:Create(i, TweenInfo.new(t or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
 end
 
@@ -242,7 +260,7 @@ do
 	}, kw)
 
 	local ok = new("TextButton", {
-		Text = "ENTRAR", Size = UDim2.new(0, 0, 0, 0), Position = UDim2.fromOffset(20, 224), BackgroundColor3 = KC.red,
+		Text = "ENTRAR", Size = UDim2.new(1, -40, 0, 36), Position = UDim2.fromOffset(20, 224), BackgroundColor3 = KC.red,
 		TextColor3 = WHITE, Font = Enum.Font.GothamBlack, TextSize = 14, AutoButtonColor = false,
 	}, kw)
 	corner(ok, 8)
@@ -254,7 +272,7 @@ do
 	}, kw)
 	corner(x, 6)
 	new("TextLabel", {
-		Text = "made by diretoria", Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 1, -17), BackgroundTransparency = 1,
+		Text = "BONDE BATE E RODA", Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 1, -17), BackgroundTransparency = 1,
 		TextColor3 = KC.dim, Font = Enum.Font.Gotham, TextSize = 10,
 	}, kw)
 
@@ -329,6 +347,10 @@ end
 local function addP(p)
 	if p == LP or table.find(plist, p) then return end
 	plist[#plist + 1] = p
+	task.spawn(function()
+		local ok, r = pcall(LP.IsFriendsWith, LP, p.UserId)
+		if ok and r then friends[p] = true end
+	end)
 	track(p.CharacterAdded:Connect(function() info[p] = nil; build(p) end))
 	track(p.CharacterRemoving:Connect(function() info[p] = nil end))
 	build(p)
@@ -337,6 +359,7 @@ local function remP(p)
 	local idx = table.find(plist, p)
 	if idx then table.remove(plist, idx) end
 	info[p] = nil
+	friends[p] = nil
 	dropESP(p)
 end
 track(Players.PlayerAdded:Connect(addP))
@@ -419,12 +442,16 @@ local function hitStep()
 end
 
 ---------------------------------------------------------------- AIMBOT
+local HAS_DRAW = false
+pcall(function() local t = Drawing.new("Line"); t:Remove(); HAS_DRAW = true end)
+
 local fovC = new("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false}, gui)
 new("UICorner", {CornerRadius = UDim.new(1, 0)}, fovC)
 local fovS = stroke(fovC, RED, 1.5)
 local rp = RaycastParams.new()
 rp.FilterType = Enum.RaycastFilterType.Exclude
 local lastFilter = 0
+local lockedPart, aimLineD
 
 local function screenCenter(cam)
 	if UIS.TouchEnabled and not UIS.MouseEnabled then
@@ -434,17 +461,24 @@ local function screenCenter(cam)
 	return UIS:GetMouseLocation()
 end
 
+local function hasTool()
+	local ch = LP.Character
+	return ch and ch:FindFirstChildOfClass("Tool")
+end
+
 local function aimStep(cam, now)
 	local showFov = S.aimOn and S.aimShowFov
 	P(fovC, "Visible", showFov)
-	if not S.aimOn then return end
+	if aimLineD and not (S.aimOn and S.aimLine) then P(aimLineD, "Visible", false) end
+	if not S.aimOn then lockedPart = nil return end
 	local center = screenCenter(cam)
 	if showFov then
 		P(fovC, "Size", UDim2.fromOffset(S.aimFov * 2, S.aimFov * 2))
 		P(fovC, "Position", UDim2.fromOffset(center.X, center.Y))
 		P(fovS, "Color", col(S.aimFovColor))
 	end
-	if S.aimMode == 2 and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
+	if S.aimMode == 2 and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then lockedPart = nil; if aimLineD then P(aimLineD, "Visible", false) end return end
+	if S.aimMode == 3 and not hasTool() then lockedPart = nil; if aimLineD then P(aimLineD, "Visible", false) end return end
 
 	if S.aimWall and now - lastFilter > 0.5 then
 		lastFilter = now
@@ -455,8 +489,9 @@ local function aimStep(cam, now)
 	end
 
 	local origin = cam.CFrame.Position
-	local best, bestD = nil, S.aimFov
+	local best, bestScore = nil, math.huge
 	local ap = S.aimPart
+	local fov, sticky, tmode = S.aimFov, S.aimSticky, S.aimTarget
 	for _, p in ipairs(plist) do
 		if isEnemy(p, S.aimTeam) then
 			local i = live(p)
@@ -464,13 +499,18 @@ local function aimStep(cam, now)
 				local part = (ap == 1 and i.head) or (ap == 2 and i.torso) or i.root
 				if part then
 					local pos = part.Position
-					if (pos - origin).Magnitude <= S.aimDist then
+					local d3 = (pos - origin).Magnitude
+					if d3 <= S.aimDist then
 						local v, on = cam:WorldToViewportPoint(pos)
 						if on then
 							local d = (Vector2.new(v.X, v.Y) - center).Magnitude
-							if d < bestD then
-								if not S.aimWall or Workspace:Raycast(origin, pos - origin, rp) == nil then
-									bestD = d; best = part
+							local isLock = sticky and part == lockedPart
+							if d < (isLock and fov * 1.6 or fov) then
+								local score = d
+								if tmode == 2 then score = d3 elseif tmode == 3 then score = i.hum.Health end
+								if isLock then score = -1 end
+								if score < bestScore and (not S.aimWall or Workspace:Raycast(origin, pos - origin, rp) == nil) then
+									bestScore = score; best = part
 								end
 							end
 						end
@@ -479,16 +519,69 @@ local function aimStep(cam, now)
 			end
 		end
 	end
+	lockedPart = sticky and best or nil
 	if best then
-		local pos = best.Position
+		local pos = best.Position + Vector3.new(0, S.aimYOff, 0)
 		if S.aimPredOn then pos = pos + best.AssemblyLinearVelocity * S.aimPred end
 		cam.CFrame = cam.CFrame:Lerp(CFrame.new(origin, pos), math.clamp(S.aimSmooth / 100, 0.01, 1))
+		if S.aimLine and HAS_DRAW then
+			if not aimLineD then aimLineD = Drawing.new("Line"); aimLineD.Thickness = 1.5; aimLineD.Visible = false end
+			local sp = cam:WorldToViewportPoint(pos)
+			P(aimLineD, "From", center); P(aimLineD, "To", Vector2.new(sp.X, sp.Y))
+			P(aimLineD, "Color", col(S.aimFovColor)); P(aimLineD, "Visible", sp.Z > 0)
+		end
+	elseif aimLineD then
+		P(aimLineD, "Visible", false)
+	end
+end
+
+---------------------------------------------------------------- TRIGGER / AUTOCLIQUE / REACH
+local lastTrig, lastClick = 0, 0
+local rpTrig = RaycastParams.new()
+rpTrig.FilterType = Enum.RaycastFilterType.Exclude
+
+local function trigStep(cam, now)
+	if not S.trigOn or now - lastTrig < S.trigDelay then return end
+	local ch = LP.Character
+	local tool = ch and ch:FindFirstChildOfClass("Tool")
+	if not tool then return end
+	local c = screenCenter(cam)
+	local ray = cam:ViewportPointToRay(c.X, c.Y)
+	rpTrig.FilterDescendantsInstances = {ch}
+	local res = Workspace:Raycast(ray.Origin, ray.Direction * S.aimDist, rpTrig)
+	if not res then return end
+	local m = res.Instance:FindFirstAncestorOfClass("Model")
+	local p = m and Players:GetPlayerFromCharacter(m)
+	if p and isEnemy(p, S.aimTeam) and live(p) then
+		lastTrig = now
+		pcall(tool.Activate, tool)
+	end
+end
+
+local function clickStep(now)
+	if not S.clickOn or now - lastClick < S.clickRate then return end
+	local tool = hasTool()
+	if tool then
+		lastClick = now
+		pcall(tool.Activate, tool)
+	end
+end
+
+local reachH
+local function reachStep()
+	local tool = hasTool()
+	local h = tool and tool:FindFirstChild("Handle")
+	if reachH and reachH ~= h then restore(reachH); reachH = nil end
+	if S.reachOn and h and h:IsA("BasePart") then
+		local s = S.reachSize
+		expand(h, Vector3.new(s, s, s), 1, nil)
+		reachH = h
+	elseif reachH then
+		restore(reachH); reachH = nil
 	end
 end
 
 ---------------------------------------------------------------- ESP (objetos só quando usados)
-local HAS_DRAW = false
-pcall(function() local t = Drawing.new("Line"); t:Remove(); HAS_DRAW = true end)
 
 local function obj(o, key, cls, props)
 	local d = o[key]
@@ -716,6 +809,7 @@ local function espStep(cam, now)
 end
 
 ---------------------------------------------------------------- TROLL
+local TR = {orbit = 0, nfHum = nil, nfApplied = false, saved = nil}
 local flyBV, flyBG
 local flyUp, flyDown = false, false
 local wsApplied, jpApplied, gravApplied, fovApplied = false, false, false, false
@@ -750,7 +844,7 @@ local function movStep(dt)
 		Workspace.Gravity = origGrav; gravApplied = false
 	end
 
-	if not (S.flyOn or S.speedOn or S.jumpOn or S.spinOn or flyBV or wsApplied or jpApplied) then return end
+	if not (S.flyOn or S.speedOn or S.jumpOn or S.spinOn or S.bhop or S.orbitOn or S.followOn or S.nofall or TR.nfApplied or flyBV or wsApplied or jpApplied) then return end
 	local char = LP.Character
 	if not char then return end
 	local hum = char:FindFirstChildOfClass("Humanoid")
@@ -810,6 +904,34 @@ local function movStep(dt)
 	if S.spinOn and not S.flyOn then
 		root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(S.spinSpeed * dt), 0)
 	end
+
+	if S.bhop and hum.MoveDirection.Magnitude > 0 and hum.FloorMaterial ~= Enum.Material.Air
+		and (UIS:IsKeyDown(Enum.KeyCode.Space) or not UIS.KeyboardEnabled) then
+		hum:ChangeState(Enum.HumanoidStateType.Jumping)
+	end
+
+	if (S.nofall and TR.nfHum ~= hum) or (not S.nofall and TR.nfApplied) then
+		TR.nfHum = S.nofall and hum or nil
+		TR.nfApplied = S.nofall
+		pcall(function()
+			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, not S.nofall)
+			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, not S.nofall)
+		end)
+	end
+
+	if (S.orbitOn or S.followOn) and not S.flyOn then
+		local tp = Players:FindFirstChild(S.tpName)
+		local tr = tp and tp.Character and tp.Character:FindFirstChild("HumanoidRootPart")
+		if tr then
+			if S.orbitOn then
+				TR.orbit = TR.orbit + dt * S.orbitSpeed
+				local off = Vector3.new(math.cos(TR.orbit), 0, math.sin(TR.orbit)) * S.orbitDist
+				root.CFrame = CFrame.new(tr.Position + off, tr.Position)
+			else
+				root.CFrame = root.CFrame:Lerp(tr.CFrame * CFrame.new(0, 0, S.followDist), math.clamp(dt * 8, 0, 1))
+			end
+		end
+	end
 end
 
 track(RunService.Stepped:Connect(function()
@@ -859,7 +981,7 @@ local win = new("Frame", {
 }, gui)
 corner(win, 12)
 stroke(win, C.red, 1.5, 0.15)
-new("UIScale", {Scale = uiScale}, win)
+local winScale = new("UIScale", {Scale = uiScale}, win)
 new("UIGradient", {
 	Rotation = 90,
 	Color = ColorSequence.new(Color3.fromRGB(16, 8, 10), Color3.fromRGB(6, 6, 7)),
@@ -888,7 +1010,7 @@ new("TextLabel", {
 	TextXAlignment = Enum.TextXAlignment.Left,
 }, top)
 new("TextLabel", {
-	Text = "TFJ  •  DELTA  •  v3.2", Size = UDim2.fromOffset(200, 14), Position = UDim2.fromOffset(54, 26),
+	Text = "TFJ  •  DELTA  •  v4.0", Size = UDim2.fromOffset(200, 14), Position = UDim2.fromOffset(54, 26),
 	BackgroundTransparency = 1, TextColor3 = C.red, Font = Enum.Font.GothamBold, TextSize = 10,
 	TextXAlignment = Enum.TextXAlignment.Left,
 }, top)
@@ -985,6 +1107,7 @@ new("TextLabel", {
 
 local pageHolder = new("Frame", {Position = UDim2.fromOffset(138, 58), Size = UDim2.new(1, -148, 1, -68), BackgroundTransparency = 1, ClipsDescendants = true}, win)
 local pages, tabBtns = {}, {}
+local builders, built, refresh = {}, {}, {}
 local curPage
 
 local function nextOrder(o)
@@ -1004,6 +1127,12 @@ local function newPage()
 end
 
 local function selectTab(name)
+	if builders[name] and not built[name] then
+		built[name] = true
+		curPage = pages[name]
+		local ok, err = pcall(builders[name])
+		if not ok then warn("[XIT] aba " .. name .. ": " .. tostring(err)) end
+	end
 	for n, pg in pairs(pages) do pg.Visible = (n == name) end
 	for n, b in pairs(tabBtns) do
 		local a = (n == name)
@@ -1012,7 +1141,7 @@ local function selectTab(name)
 	end
 end
 
-local function makeTab(name, order)
+local function makeTab(name, order, builder)
 	local b = new("TextButton", {
 		Text = name, Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = C.row, TextColor3 = C.dim,
 		Font = Enum.Font.GothamBlack, TextSize = 13, AutoButtonColor = false, LayoutOrder = order,
@@ -1022,7 +1151,7 @@ local function makeTab(name, order)
 	b.Activated:Connect(function() selectTab(name) end)
 	tabBtns[name] = b
 	pages[name] = newPage()
-	curPage = pages[name]
+	builders[name] = builder
 	return pages[name]
 end
 
@@ -1071,6 +1200,7 @@ local function toggle(parent, name, key, cb)
 		if anim then tw(sw, g1); tw(knob, g2) else sw.BackgroundColor3 = g1.BackgroundColor3; knob.Position = g2.Position end
 	end
 	render(false)
+	refresh[key] = function() render(false) end
 	f.MouseEnter:Connect(function() tw(f, {BackgroundColor3 = Color3.fromRGB(34, 34, 38)}) end)
 	f.MouseLeave:Connect(function() tw(f, {BackgroundColor3 = C.row}) end)
 	f.Activated:Connect(function()
@@ -1080,7 +1210,7 @@ local function toggle(parent, name, key, cb)
 	end)
 end
 
-local function slider(parent, name, key, min, max, step, suffix)
+local function slider(parent, name, key, min, max, step, suffix, cb)
 	local page = curPage
 	local f = row(parent, 50)
 	new("TextLabel", {
@@ -1108,10 +1238,12 @@ local function slider(parent, name, key, min, max, step, suffix)
 		val.Text = string.format("%." .. dec .. "f", S[key]) .. (suffix or "")
 	end
 	render()
+	refresh[key] = render
 	local function setX(x)
 		local rel = math.clamp((x - hit.AbsolutePosition.X) / math.max(hit.AbsoluteSize.X, 1), 0, 1)
 		S[key] = math.clamp(math.floor((min + (max - min) * rel) / step + 0.5) * step, min, max)
 		render()
+		if cb then cb(S[key]) end
 	end
 	local dragging, dInput = false, nil
 	local function isPress(i) return i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch end
@@ -1140,6 +1272,7 @@ local function cycle(parent, name, key, options)
 	}, f)
 	corner(b, 6)
 	stroke(b, C.dark, 1)
+	refresh[key] = function() b.Text = options[S[key]] end
 	b.Activated:Connect(function()
 		S[key] = S[key] % #options + 1
 		b.Text = options[S[key]]
@@ -1158,126 +1291,13 @@ local function button(parent, name, cb)
 	return b
 end
 
----------------------------------------------------------------- PÁGINA: COMBATE
-makeTab("COMBATE", 1)
-local cA = card("AIMBOT")
-toggle(cA, "Aimbot", "aimOn")
-cycle(cA, "Ativação", "aimMode", {"Sempre", "Botão dir. (PC)"})
-cycle(cA, "Mirar em", "aimPart", {"Cabeça", "Peito", "Raiz"})
-slider(cA, "Suavidade (100 = travado)", "aimSmooth", 1, 100, 1)
-slider(cA, "Tamanho do FOV", "aimFov", 20, 600, 5, "px")
-toggle(cA, "Mostrar círculo FOV", "aimShowFov")
-cycle(cA, "Cor do FOV", "aimFovColor", COLOR_NAMES)
-slider(cA, "Distância máxima", "aimDist", 50, 3000, 50, "m")
-toggle(cA, "Ignorar meu time", "aimTeam")
-toggle(cA, "Checar parede", "aimWall")
-toggle(cA, "Predição de movimento", "aimPredOn")
-slider(cA, "Força da predição", "aimPred", 0, 0.5, 0.01)
-
-local cB = card("HITBOX (CAIXA)")
-toggle(cB, "Hitbox", "hbOn")
-slider(cB, "Largura", "hbW", 2, 40, 0.5)
-slider(cB, "Altura", "hbH", 2, 40, 0.5)
-slider(cB, "Transparência", "hbTrans", 0, 1, 0.05)
-cycle(cB, "Cor da hitbox", "hbColor", COLOR_NAMES)
-toggle(cB, "Ignorar meu time", "hbTeam")
-
-local cH = card("HITHEAD (CABEÇA)")
-toggle(cH, "HitHead", "hhOn")
-slider(cH, "Tamanho da cabeça", "hhSize", 1.5, 25, 0.5)
-toggle(cH, "Esfera visível", "hhVisual")
-slider(cH, "Transparência da esfera", "hhTrans", 0, 1, 0.05)
-cycle(cH, "Cor da esfera", "hhColor", COLOR_NAMES)
-toggle(cH, "Esconder cabeça original", "hhHide")
-toggle(cH, "Ignorar meu time", "hhTeam")
-
----------------------------------------------------------------- PÁGINA: ESP
-makeTab("ESP", 2)
-if not HAS_DRAW then
-	local w = card("AVISO")
-	local r = row(w, 34)
-	label(r, "Sem Drawing neste executor: só chams")
-end
-local e1 = card("GERAL")
-toggle(e1, "ESP ligado", "espOn")
-slider(e1, "Taxa de atualização", "espFps", 15, 240, 5, " fps")
-slider(e1, "Distância máxima", "espMaxDist", 100, 5000, 100, "m")
-toggle(e1, "Só inimigos", "espTeam")
-toggle(e1, "Usar cor do time", "espTeamColor")
-cycle(e1, "Cor do ESP", "espColor", COLOR_NAMES)
-
-local e2 = card("CAIXA")
-toggle(e2, "Caixa", "espBox")
-cycle(e2, "Estilo", "espBoxStyle", {"Completa", "Cantos"})
-toggle(e2, "Preenchimento", "espFill")
-slider(e2, "Opacidade do preench.", "espFillOp", 0.05, 0.8, 0.05)
-
-local e3 = card("INFORMAÇÕES")
-toggle(e3, "Nome", "espName")
-toggle(e3, "Distância", "espDist")
-toggle(e3, "Barra de vida", "espHealth")
-toggle(e3, "Arma na mão", "espWeapon")
-slider(e3, "Tamanho do texto", "espTextSize", 10, 22, 1)
-
-local e4 = card("LINHAS")
-toggle(e4, "Tracer", "espTracer")
-cycle(e4, "Origem do tracer", "espTracerFrom", {"Embaixo", "Centro", "Em cima"})
-toggle(e4, "Esqueleto", "espSkeleton")
-toggle(e4, "Círculo na cabeça", "espHead")
-
-local e5 = card("EXTRAS")
-toggle(e5, "Chams (brilho)", "espChams")
-slider(e5, "Preench. do chams", "espChamsFill", 0, 1, 0.05)
-toggle(e5, "Setas fora da tela", "espArrow")
-slider(e5, "Raio das setas", "espArrowR", 80, 400, 10, "px")
-
----------------------------------------------------------------- PÁGINA: TROLL
-makeTab("TROLL", 3)
-local t1 = card("VOAR")
-toggle(t1, "Voar", "flyOn", function(v) flyBtns.Visible = v end)
-slider(t1, "Velocidade do voo", "flySpeed", 10, 300, 5)
-
-local t2 = card("VELOCIDADE")
-toggle(t2, "Velocidade", "speedOn")
-cycle(t2, "Modo", "speedMode", {"Velocity", "CFrame", "WalkSpeed"})
-slider(t2, "Valor", "speed", 16, 300, 2)
-
-local t3 = card("PULO")
-toggle(t3, "Pulo alto", "jumpOn")
-slider(t3, "Força do pulo", "jump", 50, 300, 5)
-toggle(t3, "Pulo infinito", "infJump")
-
-local t4 = card("EXTRAS")
-toggle(t4, "Noclip", "noclip")
-toggle(t4, "Girar", "spinOn")
-slider(t4, "Velocidade do giro", "spinSpeed", 30, 3000, 30, "°/s")
-toggle(t4, "Gravidade custom", "gravOn")
-slider(t4, "Gravidade", "gravity", 0, 300, 5)
-toggle(t4, "FOV da câmera", "fovOn")
-slider(t4, "Valor do FOV", "camFov", 40, 120, 1)
-toggle(t4, "Anti-AFK", "afk")
-
-local t5 = card("TELEPORTE")
-local tpRow = row(t5, 34)
-label(tpRow, "Jogador alvo")
-local tpBtn = new("TextButton", {
-	Text = S.tpName, Size = UDim2.fromOffset(120, 24), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0),
-	BackgroundColor3 = C.panel, TextColor3 = C.red, Font = Enum.Font.GothamBold, TextSize = 12, AutoButtonColor = false,
-}, tpRow)
-corner(tpBtn, 6)
-stroke(tpBtn, C.dark, 1)
-tpBtn.Activated:Connect(function() tpNext(); tpBtn.Text = S.tpName end)
-button(t5, "TELEPORTAR ATÉ O JOGADOR", function()
-	local target = Players:FindFirstChild(S.tpName)
-	local tr = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-	local mr = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-	if tr and mr then mr.CFrame = tr.CFrame * CFrame.new(0, 0, 3) end
-end)
-
----------------------------------------------------------------- v3: SERVIÇOS EXTRAS E HELPERS
-local Teams, RS = svc("Teams"), svc("ReplicatedStorage")
-local Lighting, TeleportService, HttpService = svc("Lighting"), svc("TeleportService"), svc("HttpService")
+---------------------------------------------------------------- v4: SERVIÇOS, HELPERS E MÓDULOS
+local Lighting, TeleportService, HttpService, Stats = svc("Lighting"), svc("TeleportService"), svc("HttpService"), svc("Stats")
+local Teams = svc("Teams")
 local nc = newcclosure or function(f) return f end
+local alive = true
+local M = {cleanups = {}}
+local function onCleanup(f) M.cleanups[#M.cleanups + 1] = f end
 
 local function picker(parent, name, key, getList)
 	local f = row(parent, 34)
@@ -1289,6 +1309,7 @@ local function picker(parent, name, key, getList)
 	}, f)
 	corner(b, 6)
 	stroke(b, C.dark, 1)
+	refresh[key] = function() b.Text = S[key] end
 	b.Activated:Connect(function()
 		local list = getList()
 		if #list == 0 then S[key] = "—"
@@ -1312,272 +1333,867 @@ local function myRoot()
 	return ch and ch:FindFirstChild("HumanoidRootPart"), ch and ch:FindFirstChildOfClass("Humanoid")
 end
 
----------------------------------------------------------------- v3.1: DANO POR HIT (hook só sob demanda)
-local armUntil = 0
-local function dmgMult() return math.max(1, math.ceil(S.dmgWant / math.max(S.dmgBase, 1))) end
-
-local function touchHit(tool)
-	local h = tool:FindFirstChild("Handle")
-	local root = myRoot()
-	if not h or not root or not firetouchinterest then return end
-	local best, bd = nil, S.dmgReach
-	for _, p in ipairs(plist) do
-		local i = live(p)
-		if i and isEnemy(p, S.dmgTeam) then
-			local d = (i.root.Position - root.Position).Magnitude
-			if d <= bd then bd = d; best = i end
-		end
-	end
-	if best then
-		task.spawn(function()
-			for _ = 1, dmgMult() do
-				pcall(firetouchinterest, h, best.root, 0)
-				pcall(firetouchinterest, h, best.root, 1)
-				task.wait()
-			end
-		end)
-	end
-end
-
-local alive = true
-local oldNC, hooked = nil, false
-local function installHook()
-	if hooked or not hookmetamethod then return end
-	hooked = true
-	pcall(function()
-		oldNC = hookmetamethod(game, "__namecall", nc(function(self, ...)
-			if alive and S.dmgOn and S.dmgMode == 1 and os.clock() < armUntil and not checkcaller() then
-				if getnamecallmethod() == "FireServer" and typeof(self) == "Instance" and self:IsA("RemoteEvent") then
-					local args = table.pack(...)
-					local extra = dmgMult() - 1
-					if extra > 0 then
-						task.spawn(function()
-							for _ = 1, extra do pcall(self.FireServer, self, table.unpack(args, 1, args.n)) end
-						end)
-					end
-				end
-			end
-			return oldNC(self, ...)
-		end))
-	end)
-end
-
-local watched = setmetatable({}, {__mode = "k"})
-local function watch(t)
-	if not t:IsA("Tool") or watched[t] then return end
-	watched[t] = true
-	track(t.Activated:Connect(function()
-		armUntil = os.clock() + 0.35
-		if S.dmgOn and S.dmgMode == 1 then installHook() end
-		if S.dmgOn and S.dmgMode == 2 then touchHit(t) end
-	end))
-end
-local function watchAll(parent)
-	for _, t in ipairs(parent:GetChildren()) do watch(t) end
-	track(parent.ChildAdded:Connect(watch))
-end
-watchAll(LP:WaitForChild("Backpack"))
-if LP.Character then watchAll(LP.Character) end
-track(LP.CharacterAdded:Connect(function(ch) watchAll(ch); watchAll(LP:WaitForChild("Backpack")) end))
-
-makeTab("DANO", 4)
-local d1 = card("DANO POR HIT")
-toggle(d1, "Dano turbinado", "dmgOn", function(v)
-	if v and S.dmgMode == 1 then installHook() end
-end)
-cycle(d1, "Modo", "dmgMode", {"Remote (repete hit)", "Toque (tool)"})
-slider(d1, "Dano desejado por hit", "dmgWant", 10, 200, 5)
-slider(d1, "Dano base da arma", "dmgBase", 1, 100, 1)
-slider(d1, "Alcance (modo toque)", "dmgReach", 5, 60, 1, "m")
-toggle(d1, "Ignorar meu time", "dmgTeam")
-status(d1, "Toque é o padrão e não usa hook. Remote instala hook só quando usado.", 48)
-
----------------------------------------------------------------- v3: TORCIDA / TIMES
-local function teamNames()
-	local l = {}
-	for _, t in ipairs(Teams:GetTeams()) do l[#l + 1] = t.Name end
-	return l
-end
-local TEAMKW = {"team", "time", "torcida", "join", "escolh", "select", "equipe"}
-local function teamRemotes()
-	local out = {}
-	for _, r in ipairs({RS, Workspace}) do
-		for _, v in ipairs(r:GetDescendants()) do
-			if v:IsA("RemoteEvent") then
-				local n = v.Name:lower()
-				for _, k in ipairs(TEAMKW) do
-					if n:find(k, 1, true) then out[#out + 1] = v; break end
-				end
-			end
-		end
-	end
-	return out
-end
-
-local teamStatus
-local function joinTeam()
-	local t = Teams:FindFirstChild(S.teamPick)
-	if not t then return end
-	local root = myRoot()
-	local how = {}
-	if root and firetouchinterest then
-		for _, v in ipairs(Workspace:GetDescendants()) do
-			if v:IsA("SpawnLocation") and not v.Neutral and v.TeamColor == t.TeamColor then
-				pcall(firetouchinterest, root, v, 0)
-				pcall(firetouchinterest, root, v, 1)
-				how[#how + 1] = "spawn"
-				break
-			end
-		end
-	end
-	local rems = teamRemotes()
-	for _, r in ipairs(rems) do
-		pcall(r.FireServer, r, t)
-		pcall(r.FireServer, r, t.Name)
-	end
-	if #rems > 0 then how[#how + 1] = #rems .. " remote(s)" end
-	if S.teamLocal then
-		pcall(function() LP.Team = t end)
-		how[#how + 1] = "local"
-	end
-	if teamStatus then
-		task.delay(0.6, function()
-			local ok = LP.Team == t
-			teamStatus.Text = "Tentei: " .. (#how > 0 and table.concat(how, ", ") or "nada achado") .. "  |  Time atual: " .. (LP.Team and LP.Team.Name or "nenhum") .. (ok and "  ✔" or "")
-		end)
-	end
-end
-
-makeTab("TORCIDA", 5)
-local m1 = card("ENTRAR NUM TIME")
-picker(m1, "Torcida", "teamPick", teamNames)
-teamStatus = status(m1, "Time atual: " .. (LP.Team and LP.Team.Name or "nenhum"), 48)
-button(m1, "ENTRAR NO TIME", joinTeam)
-toggle(m1, "Forçar visual local (só pra mim)", "teamLocal")
-button(m1, "IR PRO SPAWN DO TIME", function()
-	local t = Teams:FindFirstChild(S.teamPick)
-	local root = myRoot()
-	if not t or not root then return end
-	for _, v in ipairs(Workspace:GetDescendants()) do
-		if v:IsA("SpawnLocation") and v.TeamColor == t.TeamColor then
-			root.CFrame = v.CFrame * CFrame.new(0, 4, 0)
-			return
-		end
-	end
-end)
-
-local m2 = card("TORCIDAS NO SERVIDOR")
-local countLbl = status(m2, "Toque em atualizar", 60)
-button(m2, "ATUALIZAR CONTAGEM", function()
-	local out = {}
-	for _, t in ipairs(Teams:GetTeams()) do out[#out + 1] = t.Name .. ": " .. #t:GetPlayers() end
-	countLbl.Text = #out > 0 and table.concat(out, "  |  ") or "Esse jogo não usa Teams"
-end)
-local m3 = card("REMOTES DE TIME ACHADOS")
-local remLbl = status(m3, "Toque em listar", 60)
-button(m3, "LISTAR", function()
-	local out = {}
-	for _, r in ipairs(teamRemotes()) do out[#out + 1] = r.Name end
-	remLbl.Text = #out > 0 and table.concat(out, ", ") or "nenhum"
-end)
-
----------------------------------------------------------------- v3: MUNDO
-local lightOrig
-local function lightRestore()
-	if lightOrig then
-		pcall(function()
-			Lighting.Brightness = lightOrig.B; Lighting.GlobalShadows = lightOrig.G
-			Lighting.Ambient = lightOrig.A; Lighting.FogEnd = lightOrig.F; Lighting.ClockTime = lightOrig.T
-		end)
-		lightOrig = nil
-	end
-end
-task.spawn(function()
-	while gui.Parent do
-		if S.fullbright or S.noFog or S.clockOn then
-			if not lightOrig then
-				lightOrig = {B = Lighting.Brightness, G = Lighting.GlobalShadows, A = Lighting.Ambient, F = Lighting.FogEnd, T = Lighting.ClockTime}
-			end
-			if S.fullbright then
-				Lighting.Brightness = 2; Lighting.GlobalShadows = false; Lighting.Ambient = Color3.fromRGB(190, 190, 190)
-			end
-			if S.noFog then Lighting.FogEnd = 1e6 end
-			if S.clockOn then Lighting.ClockTime = S.clockT end
-		else
-			lightRestore()
-		end
-		task.wait(0.5)
-	end
-end)
-
-makeTab("MUNDO", 6)
-local w1 = card("VISUAL")
-toggle(w1, "Fullbright", "fullbright")
-toggle(w1, "Sem neblina", "noFog")
-toggle(w1, "Hora fixa", "clockOn")
-slider(w1, "Hora do dia", "clockT", 0, 24, 0.5, "h")
-local w2 = card("SERVIDOR")
-button(w2, "REENTRAR NO SERVIDOR", function()
-	pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LP) end)
-end)
-button(w2, "TROCAR DE SERVIDOR", function()
-	task.spawn(function()
-		pcall(function()
-			local req = request or http_request or (syn and syn.request)
-			if not req then return end
-			local res = req({Url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100", Method = "GET"})
-			local data = HttpService:JSONDecode(res.Body)
-			for _, s in ipairs(data.data or {}) do
-				if s.id ~= game.JobId and s.playing < s.maxPlayers then
-					TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LP)
-					return
-				end
-			end
-		end)
-	end)
-end)
-
----------------------------------------------------------------- v3: JOGADORES
 local function playerNames()
 	local l = {}
 	for _, p in ipairs(plist) do l[#l + 1] = p.Name end
 	table.sort(l)
 	return l
 end
-local function spectate(on)
+
+---------------------------------------------------------------- DANO POR HIT (hook só sob demanda)
+do
+	local armUntil = 0
+	local function dmgMult() return math.max(1, math.ceil(S.dmgWant / math.max(S.dmgBase, 1))) end
+
+	local function touchHit(tool)
+		local h = tool:FindFirstChild("Handle")
+		local root = myRoot()
+		if not h or not root or not firetouchinterest then return end
+		local best, bd = nil, S.dmgReach
+		for _, p in ipairs(plist) do
+			local i = live(p)
+			if i and isEnemy(p, S.dmgTeam) then
+				local d = (i.root.Position - root.Position).Magnitude
+				if d <= bd then bd = d; best = i end
+			end
+		end
+		if best then
+			task.spawn(function()
+				for _ = 1, dmgMult() do
+					pcall(firetouchinterest, h, best.root, 0)
+					pcall(firetouchinterest, h, best.root, 1)
+					task.wait()
+				end
+			end)
+		end
+	end
+
+	local oldNC, hooked = nil, false
+	function M.dmgHook()
+		if hooked or not hookmetamethod then return end
+		hooked = true
+		pcall(function()
+			oldNC = hookmetamethod(game, "__namecall", nc(function(self, ...)
+				if alive and S.dmgOn and S.dmgMode == 1 and os.clock() < armUntil and not checkcaller() then
+					if getnamecallmethod() == "FireServer" and typeof(self) == "Instance" and self:IsA("RemoteEvent") then
+						local args = table.pack(...)
+						local extra = dmgMult() - 1
+						if extra > 0 then
+							task.spawn(function()
+								for _ = 1, extra do pcall(self.FireServer, self, table.unpack(args, 1, args.n)) end
+							end)
+						end
+					end
+				end
+				return oldNC(self, ...)
+			end))
+		end)
+	end
+
+	local watched = setmetatable({}, {__mode = "k"})
+	local function watch(t)
+		if not t:IsA("Tool") or watched[t] then return end
+		watched[t] = true
+		track(t.Activated:Connect(function()
+			armUntil = os.clock() + 0.35
+			if S.dmgOn and S.dmgMode == 1 then M.dmgHook() end
+			if S.dmgOn and S.dmgMode == 2 then touchHit(t) end
+		end))
+	end
+	local function watchAll(parent)
+		for _, t in ipairs(parent:GetChildren()) do watch(t) end
+		track(parent.ChildAdded:Connect(watch))
+	end
+	watchAll(LP:WaitForChild("Backpack"))
+	if LP.Character then watchAll(LP.Character) end
+	track(LP.CharacterAdded:Connect(function(ch) watchAll(ch); watchAll(LP:WaitForChild("Backpack")) end))
+end
+
+---------------------------------------------------------------- TROLL: invisível, click TP, freecam, waypoint
+do
+	-- invisível (efeito local: só você vê o personagem sumir)
+	local invSaved = setmetatable({}, {__mode = "k"})
+	local active, origDisp = false, nil
+	local function applyInvis(ch, alpha)
+		for _, v in ipairs(ch:GetDescendants()) do
+			if v:IsA("BasePart") or v:IsA("Decal") then
+				if invSaved[v] == nil then invSaved[v] = v.Transparency end
+				local target = math.max(invSaved[v], alpha)
+				if v.Transparency ~= target then v.Transparency = target end
+			end
+		end
+	end
+	local function restoreInvis()
+		for v, o in pairs(invSaved) do
+			pcall(function() v.Transparency = o end)
+			invSaved[v] = nil
+		end
+		local _, hum = myRoot()
+		if hum and origDisp then pcall(function() hum.DisplayDistanceType = origDisp end) end
+		origDisp = nil
+	end
+	task.spawn(function()
+		while gui.Parent do
+			local ch = LP.Character
+			if S.invisOn and ch then
+				active = true
+				pcall(applyInvis, ch, S.invisAlpha)
+				local hum = ch:FindFirstChildOfClass("Humanoid")
+				if hum then
+					if S.invisName then
+						if hum.DisplayDistanceType ~= Enum.HumanoidDisplayDistanceType.None then
+							origDisp = origDisp or hum.DisplayDistanceType
+							hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+						end
+					elseif origDisp then
+						hum.DisplayDistanceType = origDisp; origDisp = nil
+					end
+				end
+			elseif active then
+				active = false
+				restoreInvis()
+			end
+			task.wait(0.25)
+		end
+	end)
+	onCleanup(restoreInvis)
+
+	-- teleporte por raycast
+	local rpTp = RaycastParams.new()
+	rpTp.FilterType = Enum.RaycastFilterType.Exclude
+	local function tpTo(x, y)
+		local cam, root = getCam(), (myRoot())
+		if not cam or not root then return end
+		local ray = cam:ViewportPointToRay(x, y)
+		rpTp.FilterDescendantsInstances = {LP.Character}
+		local res = Workspace:Raycast(ray.Origin, ray.Direction * 2000, rpTp)
+		if res then root.CFrame = CFrame.new(res.Position + Vector3.new(0, 3.5, 0)) end
+	end
+	function M.tpLook()
+		local cam = getCam()
+		if cam then tpTo(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2) end
+	end
+	track(UIS.InputBegan:Connect(function(i, gp)
+		if gp or not S.clickTp then return end
+		if i.UserInputType == Enum.UserInputType.MouseButton1 and UIS:IsKeyDown(Enum.KeyCode.LeftControl) then
+			local m = UIS:GetMouseLocation()
+			tpTo(m.X, m.Y)
+		end
+	end))
+
+	function M.savePos()
+		local root = myRoot()
+		if root then TR.saved = root.CFrame end
+	end
+	function M.loadPos()
+		local root = myRoot()
+		if root and TR.saved then root.CFrame = TR.saved end
+	end
+	function M.sit()
+		local _, hum = myRoot()
+		if hum then hum.Sit = true end
+	end
+
+	-- zoom sem limite
+	local zoomOrig
+	function M.zoom(on)
+		pcall(function()
+			if on then
+				zoomOrig = zoomOrig or {LP.CameraMaxZoomDistance, LP.CameraMinZoomDistance, LP.CameraMode}
+				LP.CameraMaxZoomDistance = 1e5
+				LP.CameraMinZoomDistance = 0.5
+				LP.CameraMode = Enum.CameraMode.Classic
+			elseif zoomOrig then
+				LP.CameraMaxZoomDistance = zoomOrig[1]
+				LP.CameraMinZoomDistance = zoomOrig[2]
+				LP.CameraMode = zoomOrig[3]
+				zoomOrig = nil
+			end
+		end)
+	end
+	onCleanup(function() M.zoom(false) end)
+
+	-- freecam
+	local fc = {on = false, cf = nil, yaw = 0, pitch = 0}
+	function M.fcSet(on)
+		local cam = getCam()
+		if not cam then return end
+		if on and not fc.on then
+			fc.on = true
+			fc.cf = cam.CFrame
+			local rx, ry = cam.CFrame:ToOrientation()
+			fc.pitch, fc.yaw = rx, ry
+			cam.CameraType = Enum.CameraType.Scriptable
+			local root = myRoot()
+			if root then root.Anchored = true end
+		elseif not on and fc.on then
+			fc.on = false
+			cam.CameraType = Enum.CameraType.Custom
+			local root = myRoot()
+			if root then root.Anchored = false end
+		end
+	end
+	track(UIS.InputChanged:Connect(function(i, gp)
+		if not fc.on then return end
+		local mouse = i.UserInputType == Enum.UserInputType.MouseMovement and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+		local touch = i.UserInputType == Enum.UserInputType.Touch and not gp
+		if mouse or touch then
+			fc.yaw = fc.yaw - i.Delta.X * 0.004
+			fc.pitch = math.clamp(fc.pitch - i.Delta.Y * 0.004, -1.5, 1.5)
+		end
+	end))
+	function M.fcStep(cam, dt)
+		if not fc.on then return end
+		local root, hum = myRoot()
+		if root and not root.Anchored then root.Anchored = true end
+		local rot = CFrame.fromOrientation(fc.pitch, fc.yaw, 0)
+		local md = hum and hum.MoveDirection or Vector3.zero
+		local look, right = rot.LookVector, rot.RightVector
+		local fl = Vector3.new(look.X, 0, look.Z)
+		local fr = Vector3.new(right.X, 0, right.Z)
+		fl = fl.Magnitude > 0 and fl.Unit or Vector3.zero
+		fr = fr.Magnitude > 0 and fr.Unit or Vector3.zero
+		local v = look * md:Dot(fl) + right * md:Dot(fr)
+		local up = flyUp or UIS:IsKeyDown(Enum.KeyCode.E) or UIS:IsKeyDown(Enum.KeyCode.Space)
+		local down = flyDown or UIS:IsKeyDown(Enum.KeyCode.Q) or UIS:IsKeyDown(Enum.KeyCode.LeftControl)
+		v = v + Vector3.new(0, (up and 1 or 0) - (down and 1 or 0), 0)
+		fc.cf = CFrame.new(fc.cf.Position + v * S.fcSpeed * dt) * rot
+		cam.CFrame = fc.cf
+	end
+	onCleanup(function() M.fcSet(false) end)
+end
+
+---------------------------------------------------------------- TORCIDA / TIMES (sem disparar remotes às cegas)
+do
+	local lastJoin = 0
+	function M.teamNames()
+		local l = {}
+		for _, t in ipairs(Teams:GetTeams()) do l[#l + 1] = t.Name end
+		return l
+	end
+
+	local function clickGui(b)
+		local fired = false
+		if getconnections then
+			for _, sig in ipairs({b.MouseButton1Click, b.Activated, b.MouseButton1Down, b.MouseButton1Up}) do
+				pcall(function()
+					for _, c in ipairs(getconnections(sig)) do
+						pcall(function() c:Fire() end)
+						fired = true
+					end
+				end)
+			end
+		end
+		if not fired and firesignal then
+			pcall(firesignal, b.MouseButton1Click)
+			pcall(firesignal, b.Activated)
+			fired = true
+		end
+		return fired
+	end
+
+	-- usa o botão/prompt que o próprio jogo oferece: o código do jogo é quem manda o pedido
+	function M.joinTeam(setStatus)
+		if os.clock() - lastJoin < 3 then return end
+		lastJoin = os.clock()
+		local t = Teams:FindFirstChild(S.teamPick)
+		if not t then setStatus("Escolha uma torcida primeiro") return end
+		local name = t.Name:lower()
+		local how
+		local pg = LP:FindFirstChildOfClass("PlayerGui")
+		if pg then
+			for _, b in ipairs(pg:GetDescendants()) do
+				if (b:IsA("TextButton") or b:IsA("ImageButton")) and not b:IsDescendantOf(gui) and b.AbsoluteSize.X > 0 then
+					local tx = b:IsA("TextButton") and b.Text:lower() or ""
+					if (tx ~= "" and tx:find(name, 1, true)) or b.Name:lower():find(name, 1, true) then
+						if clickGui(b) then how = "botão do jogo" break end
+					end
+				end
+			end
+		end
+		local root = myRoot()
+		if not how and root and fireproximityprompt then
+			for _, v in ipairs(Workspace:GetDescendants()) do
+				if v:IsA("ProximityPrompt") then
+					local par = v.Parent
+					local pn = (v.Name .. " " .. (par and par.Name or "") .. " " .. v.ObjectText .. " " .. v.ActionText):lower()
+					local pos = par and par:IsA("BasePart") and par.Position
+					if pos and pn:find(name, 1, true) and (pos - root.Position).Magnitude <= v.MaxActivationDistance + 4 then
+						pcall(fireproximityprompt, v)
+						how = "prompt perto de você"
+						break
+					end
+				end
+			end
+		end
+		if S.teamLocal then
+			pcall(function() LP.Team = t end)
+			how = (how and (how .. " + ") or "") .. "visual local"
+		end
+		task.delay(0.8, function()
+			local ok = LP.Team == t
+			setStatus((how and ("Usei: " .. how) or "Nada do jogo achado (chegue perto do pad/prompt)") .. "  |  Time atual: " .. (LP.Team and LP.Team.Name or "nenhum") .. (ok and "  ✔" or ""))
+		end)
+	end
+
+	function M.toSpawn()
+		local t = Teams:FindFirstChild(S.teamPick)
+		local root = myRoot()
+		if not t or not root then return end
+		for _, v in ipairs(Workspace:GetDescendants()) do
+			if v:IsA("SpawnLocation") and v.TeamColor == t.TeamColor then
+				root.CFrame = v.CFrame * CFrame.new(0, 4, 0)
+				return
+			end
+		end
+	end
+end
+
+---------------------------------------------------------------- MUNDO (luz)
+do
+	local lightOrig
+	local function lightRestore()
+		if lightOrig then
+			pcall(function()
+				Lighting.Brightness = lightOrig.B; Lighting.GlobalShadows = lightOrig.G
+				Lighting.Ambient = lightOrig.A; Lighting.FogEnd = lightOrig.F; Lighting.ClockTime = lightOrig.T
+			end)
+			lightOrig = nil
+		end
+	end
+	task.spawn(function()
+		while gui.Parent do
+			if S.fullbright or S.noFog or S.clockOn then
+				if not lightOrig then
+					lightOrig = {B = Lighting.Brightness, G = Lighting.GlobalShadows, A = Lighting.Ambient, F = Lighting.FogEnd, T = Lighting.ClockTime}
+				end
+				if S.fullbright then
+					Lighting.Brightness = 2; Lighting.GlobalShadows = false; Lighting.Ambient = Color3.fromRGB(190, 190, 190)
+				end
+				if S.noFog then Lighting.FogEnd = 1e6 end
+				if S.clockOn then Lighting.ClockTime = S.clockT end
+			else
+				lightRestore()
+			end
+			task.wait(0.5)
+		end
+	end)
+	onCleanup(lightRestore)
+end
+
+---------------------------------------------------------------- JOGADORES (espectar)
+function M.spectate(on)
 	local cam = getCam()
 	local c = on and (Players:FindFirstChild(S.plPick) or {}).Character or LP.Character
 	local h = c and c:FindFirstChildOfClass("Humanoid")
 	if h and cam then cam.CameraSubject = h end
 end
+onCleanup(function() M.spectate(false) end)
 
-makeTab("JOGADORES", 7)
-local j1 = card("ALVO")
-picker(j1, "Jogador", "plPick", playerNames)
-button(j1, "TELEPORTAR ATÉ ELE", function()
-	local p = Players:FindFirstChild(S.plPick)
-	local tr = p and p.Character and p.Character:FindFirstChild("HumanoidRootPart")
-	local root = myRoot()
-	if tr and root then root.CFrame = tr.CFrame * CFrame.new(0, 0, 3) end
-end)
-button(j1, "ESPECTAR", function() spectate(true) end)
-button(j1, "PARAR DE ESPECTAR", function() spectate(false) end)
+---------------------------------------------------------------- OTIMIZAÇÃO
+do
+	local cats = {"part", "tex", "fx", "light", "snd", "acc", "post", "water", "grass"}
+	local stores = {}
+	for _, k in ipairs(cats) do stores[k] = setmetatable({}, {__mode = "k"}) end
+
+	local function setp(cat, inst, prop, val)
+		local st = stores[cat]
+		local s = st[inst]
+		if not s then s = {}; st[inst] = s end
+		if s[prop] == nil then s[prop] = inst[prop] end
+		if inst[prop] ~= val then inst[prop] = val end
+	end
+	local function restoreCat(cat)
+		local st = stores[cat]
+		for inst, props in pairs(st) do
+			for k, v in pairs(props) do pcall(function() inst[k] = v end) end
+			st[inst] = nil
+		end
+	end
+
+	local function applyOne(v)
+		if v:IsA("BasePart") then
+			if S.opPlastic and not saved[v] and not (LP.Character and v:IsDescendantOf(LP.Character)) then
+				setp("part", v, "Material", Enum.Material.SmoothPlastic)
+				setp("part", v, "Reflectance", 0)
+			end
+		elseif v:IsA("Decal") or v:IsA("Texture") then
+			if S.opNoTex then setp("tex", v, "Transparency", 1) end
+		elseif v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") or v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") then
+			if S.opNoPart then setp("fx", v, "Enabled", false) end
+		elseif v:IsA("PointLight") or v:IsA("SpotLight") or v:IsA("SurfaceLight") then
+			if S.opNoLight then setp("light", v, "Enabled", false) end
+		elseif v:IsA("Sound") then
+			if S.opNoSound then setp("snd", v, "Volume", 0) end
+		end
+	end
+
+	local sweeping, again = false, false
+	local function sweep()
+		if sweeping then again = true return end
+		sweeping = true
+		task.spawn(function()
+			repeat
+				again = false
+				local list = Workspace:GetDescendants()
+				for i = 1, #list do
+					local v = list[i]
+					if v.Parent then pcall(applyOne, v) end
+					if i % 250 == 0 then task.wait() end
+				end
+			until not again
+			sweeping = false
+		end)
+	end
+
+	track(Workspace.DescendantAdded:Connect(function(v)
+		if S.opPlastic or S.opNoTex or S.opNoPart or S.opNoLight or S.opNoSound then
+			task.defer(function() if v.Parent then pcall(applyOne, v) end end)
+		end
+	end))
+
+	local function postOne(v)
+		if v:IsA("PostEffect") then
+			setp("post", v, "Enabled", false)
+		elseif v:IsA("Atmosphere") then
+			setp("post", v, "Density", 0); setp("post", v, "Haze", 0); setp("post", v, "Glare", 0)
+		end
+	end
+
+	local applied = {}
+	local catFlag = {part = "opPlastic", tex = "opNoTex", fx = "opNoPart", light = "opNoLight", snd = "opNoSound"}
+	local OL = {}
+	local function qualityEnum(n)
+		for _, e in ipairs(Enum.QualityLevel:GetEnumItems()) do
+			if e.Value == n then return e end
+		end
+	end
+
+	local function tick()
+		local need = false
+		for cat, key in pairs(catFlag) do
+			local on = S[key] and true or false
+			if on ~= (applied[cat] or false) then
+				applied[cat] = on
+				if on then need = true else restoreCat(cat) end
+			end
+		end
+		if need then sweep() end
+
+		-- sombras
+		if S.opNoShadow then
+			if OL.shadows == nil then OL.shadows = Lighting.GlobalShadows end
+			if Lighting.GlobalShadows then Lighting.GlobalShadows = false end
+		elseif OL.shadows ~= nil then
+			Lighting.GlobalShadows = OL.shadows; OL.shadows = nil
+		end
+
+		-- efeitos de pós-processamento
+		if S.opNoFx ~= (applied.post or false) then
+			applied.post = S.opNoFx
+			if not S.opNoFx then restoreCat("post") end
+		end
+		if S.opNoFx then
+			for _, v in ipairs(Lighting:GetChildren()) do pcall(postOne, v) end
+			local cam = getCam()
+			if cam then for _, v in ipairs(cam:GetChildren()) do pcall(postOne, v) end end
+		end
+
+		-- água e grama
+		local terr = Workspace.Terrain
+		if S.opWater ~= (applied.water or false) then
+			applied.water = S.opWater
+			if S.opWater then
+				pcall(function()
+					setp("water", terr, "WaterWaveSize", 0); setp("water", terr, "WaterWaveSpeed", 0)
+					setp("water", terr, "WaterReflectance", 0)
+				end)
+			else restoreCat("water") end
+		end
+		if S.opNoGrass ~= (applied.grass or false) then
+			applied.grass = S.opNoGrass
+			if S.opNoGrass then pcall(setp, "grass", terr, "Decoration", false) else restoreCat("grass") end
+		end
+
+		-- acessórios dos outros jogadores
+		if S.opHideAcc ~= (applied.acc or false) then
+			applied.acc = S.opHideAcc
+			if not S.opHideAcc then restoreCat("acc") end
+		end
+		if S.opHideAcc then
+			for _, p in ipairs(plist) do
+				local c = p.Character
+				if c then
+					for _, a in ipairs(c:GetChildren()) do
+						if a:IsA("Accessory") then
+							local h = a:FindFirstChild("Handle")
+							if h then pcall(setp, "acc", h, "Transparency", 1) end
+						end
+					end
+				end
+			end
+		end
+
+		-- qualidade gráfica
+		if S.opLow then
+			pcall(function()
+				local r = settings().Rendering
+				if OL.q == nil then OL.q = r.QualityLevel; OL.mesh = r.MeshPartDetailLevel end
+				local e = qualityEnum(S.opQuality)
+				if e and r.QualityLevel ~= e then r.QualityLevel = e end
+				if r.MeshPartDetailLevel ~= Enum.MeshPartDetailLevel.Level04 then r.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04 end
+			end)
+		elseif OL.q ~= nil then
+			pcall(function()
+				local r = settings().Rendering
+				r.QualityLevel = OL.q
+				if OL.mesh then r.MeshPartDetailLevel = OL.mesh end
+			end)
+			OL.q, OL.mesh = nil, nil
+		end
+
+		-- limite de FPS
+		if setfpscap then
+			if S.opFpsCap then
+				if OL.cap == nil then OL.cap = (getfpscap and getfpscap()) or 60 end
+				if OL.capSet ~= S.opCap then OL.capSet = S.opCap; pcall(setfpscap, S.opCap) end
+			elseif OL.cap ~= nil then
+				pcall(setfpscap, OL.cap); OL.cap, OL.capSet = nil, nil
+			end
+		end
+
+		-- tela preta (renderização 3D off)
+		if S.opNo3D ~= (applied.r3d or false) then
+			applied.r3d = S.opNo3D
+			pcall(function() RunService:Set3dRenderingEnabled(not S.opNo3D) end)
+		end
+	end
+
+	task.spawn(function()
+		while gui.Parent do
+			pcall(tick)
+			task.wait(1)
+		end
+	end)
+
+	local OPT_KEYS = {"opLow", "opNoShadow", "opNoFx", "opNoPart", "opNoLight", "opNoTex", "opPlastic", "opNoSound", "opWater", "opNoGrass", "opHideAcc"}
+	function M.preset(name)
+		for _, k in ipairs(OPT_KEYS) do S[k] = false end
+		if name == "leve" then
+			S.opLow = true; S.opQuality = 4
+			S.opNoShadow = true; S.opNoFx = true; S.opNoPart = true; S.opWater = true; S.opNoGrass = true
+		elseif name == "ultra" then
+			S.opLow = true; S.opQuality = 1
+			S.opNoShadow = true; S.opNoFx = true; S.opNoPart = true; S.opNoLight = true
+			S.opNoTex = true; S.opPlastic = true; S.opWater = true; S.opNoGrass = true; S.opHideAcc = true
+		end
+		for _, fn in pairs(refresh) do pcall(fn) end
+	end
+
+	function M.cleanMem()
+		pcall(function() collectgarbage("collect") end)
+	end
+
+	function M.statsText(fps)
+		local ping, mem = 0, 0
+		pcall(function() ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5) end)
+		pcall(function() mem = math.floor(Stats:GetTotalMemoryUsageMb() + 0.5) end)
+		return string.format("FPS %d   |   Ping %d ms   |   Memória %d MB   |   Jogadores %d", fps, ping, mem, #Players:GetPlayers())
+	end
+
+	onCleanup(function()
+		for _, k in pairs(catFlag) do S[k] = false end
+		S.opNoShadow, S.opNoFx, S.opWater, S.opNoGrass, S.opHideAcc, S.opLow, S.opFpsCap, S.opNo3D = false, false, false, false, false, false, false, false
+		pcall(tick)
+		for _, c in ipairs(cats) do restoreCat(c) end
+	end)
+end
+
+---------------------------------------------------------------- ABAS (construídas só quando abertas)
+local function buildCombate()
+	local cA = card("AIMBOT")
+	toggle(cA, "Aimbot", "aimOn")
+	cycle(cA, "Ativação", "aimMode", {"Sempre", "Botão dir. (PC)", "Tool na mão"})
+	cycle(cA, "Mirar em", "aimPart", {"Cabeça", "Peito", "Raiz"})
+	cycle(cA, "Alvo", "aimTarget", {"Perto da mira", "Perto de mim", "Menor vida"})
+	slider(cA, "Suavidade (100 = travado)", "aimSmooth", 1, 100, 1)
+	slider(cA, "Tamanho do FOV", "aimFov", 20, 600, 5, "px")
+	toggle(cA, "Mostrar círculo FOV", "aimShowFov")
+	cycle(cA, "Cor do FOV/linha", "aimFovColor", COLOR_NAMES)
+	slider(cA, "Distância máxima", "aimDist", 50, 3000, 50, "m")
+	toggle(cA, "Ignorar meu time", "aimTeam")
+	toggle(cA, "Ignorar amigos (geral)", "ignFriends")
+	toggle(cA, "Checar parede", "aimWall")
+	toggle(cA, "Travar no alvo (sticky)", "aimSticky")
+	toggle(cA, "Linha até o alvo", "aimLine")
+	slider(cA, "Ajuste vertical da mira", "aimYOff", -3, 3, 0.1, " st")
+	toggle(cA, "Predição de movimento", "aimPredOn")
+	slider(cA, "Força da predição", "aimPred", 0, 0.5, 0.01)
+
+	local cT = card("TRIGGERBOT")
+	toggle(cT, "Atirar ao mirar no inimigo", "trigOn")
+	slider(cT, "Intervalo entre tiros", "trigDelay", 0.02, 0.6, 0.01, "s")
+
+	local cK = card("AUTO CLIQUE")
+	toggle(cK, "Clicar com a tool na mão", "clickOn")
+	slider(cK, "Intervalo do clique", "clickRate", 0.03, 1, 0.01, "s")
+
+	local cR = card("ALCANCE DA ARMA (REACH)")
+	toggle(cR, "Aumentar alcance da tool", "reachOn")
+	slider(cR, "Tamanho do alcance", "reachSize", 4, 40, 1, " st")
+
+	local cB = card("HITBOX (CAIXA)")
+	toggle(cB, "Hitbox", "hbOn")
+	slider(cB, "Largura", "hbW", 2, 40, 0.5)
+	slider(cB, "Altura", "hbH", 2, 40, 0.5)
+	slider(cB, "Transparência", "hbTrans", 0, 1, 0.05)
+	cycle(cB, "Cor da hitbox", "hbColor", COLOR_NAMES)
+	toggle(cB, "Ignorar meu time", "hbTeam")
+
+	local cH = card("HITHEAD (CABEÇA)")
+	toggle(cH, "HitHead", "hhOn")
+	slider(cH, "Tamanho da cabeça", "hhSize", 1.5, 25, 0.5)
+	toggle(cH, "Esfera visível", "hhVisual")
+	slider(cH, "Transparência da esfera", "hhTrans", 0, 1, 0.05)
+	cycle(cH, "Cor da esfera", "hhColor", COLOR_NAMES)
+	toggle(cH, "Esconder cabeça original", "hhHide")
+	toggle(cH, "Ignorar meu time", "hhTeam")
+
+	local d1 = card("DANO POR HIT")
+	toggle(d1, "Dano turbinado", "dmgOn", function(v)
+		if v and S.dmgMode == 1 then M.dmgHook() end
+	end)
+	cycle(d1, "Modo", "dmgMode", {"Remote (arriscado)", "Toque (tool)"})
+	slider(d1, "Dano desejado por hit", "dmgWant", 10, 200, 5)
+	slider(d1, "Dano base da arma", "dmgBase", 1, 100, 1)
+	slider(d1, "Alcance (modo toque)", "dmgReach", 5, 60, 1, "m")
+	toggle(d1, "Ignorar meu time", "dmgTeam")
+	status(d1, "Toque é o padrão e não usa hook. O modo Remote instala hook e é o mais fácil de ser detectado.", 48)
+end
+
+local function buildEsp()
+	if not HAS_DRAW then
+		local w = card("AVISO")
+		local r = row(w, 34)
+		label(r, "Sem Drawing neste executor: só chams")
+	end
+	local e1 = card("GERAL")
+	toggle(e1, "ESP ligado", "espOn")
+	slider(e1, "Taxa de atualização", "espFps", 15, 240, 5, " fps")
+	slider(e1, "Distância máxima", "espMaxDist", 100, 5000, 100, "m")
+	toggle(e1, "Só inimigos", "espTeam")
+	toggle(e1, "Usar cor do time", "espTeamColor")
+	cycle(e1, "Cor do ESP", "espColor", COLOR_NAMES)
+
+	local e2 = card("CAIXA")
+	toggle(e2, "Caixa", "espBox")
+	cycle(e2, "Estilo", "espBoxStyle", {"Completa", "Cantos"})
+	toggle(e2, "Preenchimento", "espFill")
+	slider(e2, "Opacidade do preench.", "espFillOp", 0.05, 0.8, 0.05)
+
+	local e3 = card("INFORMAÇÕES")
+	toggle(e3, "Nome", "espName")
+	toggle(e3, "Distância", "espDist")
+	toggle(e3, "Barra de vida", "espHealth")
+	toggle(e3, "Arma na mão", "espWeapon")
+	slider(e3, "Tamanho do texto", "espTextSize", 10, 22, 1)
+
+	local e4 = card("LINHAS")
+	toggle(e4, "Tracer", "espTracer")
+	cycle(e4, "Origem do tracer", "espTracerFrom", {"Embaixo", "Centro", "Em cima"})
+	toggle(e4, "Esqueleto", "espSkeleton")
+	toggle(e4, "Círculo na cabeça", "espHead")
+
+	local e5 = card("EXTRAS")
+	toggle(e5, "Chams (brilho)", "espChams")
+	slider(e5, "Preench. do chams", "espChamsFill", 0, 1, 0.05)
+	toggle(e5, "Setas fora da tela", "espArrow")
+	slider(e5, "Raio das setas", "espArrowR", 80, 400, 10, "px")
+end
+
+local function buildTroll()
+	local t1 = card("VOAR")
+	toggle(t1, "Voar", "flyOn", function(v) flyBtns.Visible = v end)
+	slider(t1, "Velocidade do voo", "flySpeed", 10, 300, 5)
+
+	local t2 = card("VELOCIDADE")
+	toggle(t2, "Velocidade", "speedOn")
+	cycle(t2, "Modo", "speedMode", {"Velocity", "CFrame", "WalkSpeed"})
+	slider(t2, "Valor", "speed", 16, 300, 2)
+
+	local t3 = card("PULO")
+	toggle(t3, "Pulo alto", "jumpOn")
+	slider(t3, "Força do pulo", "jump", 50, 300, 5)
+	toggle(t3, "Pulo infinito", "infJump")
+	toggle(t3, "Bhop (pular andando)", "bhop")
+
+	local tI = card("INVISÍVEL")
+	toggle(tI, "Invisível", "invisOn")
+	slider(tI, "Nível de invisibilidade", "invisAlpha", 0.1, 1, 0.05)
+	toggle(tI, "Esconder meu nome", "invisName")
+	status(tI, "Efeito local: some o seu personagem na sua tela. Os outros jogadores só deixam de ver se o jogo replicar isso.", 60)
+
+	local t4 = card("MOVIMENTO EXTRA")
+	toggle(t4, "Noclip", "noclip")
+	toggle(t4, "Sem dano/ragdoll de queda", "nofall")
+	toggle(t4, "Girar", "spinOn")
+	slider(t4, "Velocidade do giro", "spinSpeed", 30, 3000, 30, "°/s")
+	toggle(t4, "Gravidade custom", "gravOn")
+	slider(t4, "Gravidade", "gravity", 0, 300, 5)
+	toggle(t4, "Anti-AFK", "afk")
+
+	local tC = card("CÂMERA")
+	toggle(tC, "FOV da câmera", "fovOn")
+	slider(tC, "Valor do FOV", "camFov", 40, 120, 1)
+	toggle(tC, "Freecam", "freecam", function(v) M.fcSet(v); flyBtns.Visible = v or S.flyOn end)
+	slider(tC, "Velocidade da freecam", "fcSpeed", 10, 300, 5)
+	toggle(tC, "Zoom sem limite", "zoomInf", function(v) M.zoom(v) end)
+
+	local t5 = card("TELEPORTE")
+	picker(t5, "Jogador alvo", "tpName", playerNames)
+	button(t5, "TELEPORTAR ATÉ O JOGADOR", function()
+		local target = Players:FindFirstChild(S.tpName)
+		local tr = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+		local mr = myRoot()
+		if tr and mr then mr.CFrame = tr.CFrame * CFrame.new(0, 0, 3) end
+	end)
+	button(t5, "TELEPORTAR PRA ONDE EU OLHO", function() M.tpLook() end)
+	toggle(t5, "Ctrl + clique teleporta (PC)", "clickTp")
+	button(t5, "SALVAR MINHA POSIÇÃO", function() M.savePos() end)
+	button(t5, "VOLTAR PRA POSIÇÃO SALVA", function() M.loadPos() end)
+
+	local t6 = card("SEGUIR JOGADOR ALVO")
+	toggle(t6, "Orbitar em volta", "orbitOn", function(v) if v then S.followOn = false; if refresh.followOn then refresh.followOn() end end end)
+	slider(t6, "Velocidade da órbita", "orbitSpeed", 0.5, 12, 0.5)
+	slider(t6, "Distância da órbita", "orbitDist", 3, 40, 1, " st")
+	toggle(t6, "Grudar nas costas", "followOn", function(v) if v then S.orbitOn = false; if refresh.orbitOn then refresh.orbitOn() end end end)
+	slider(t6, "Distância ao seguir", "followDist", 2, 30, 1, " st")
+	button(t6, "SENTAR", function() M.sit() end)
+end
+
+local function buildTorcida()
+	local teamStatus
+	local m1 = card("ENTRAR NUM TIME")
+	picker(m1, "Torcida", "teamPick", M.teamNames)
+	teamStatus = status(m1, "Time atual: " .. (LP.Team and LP.Team.Name or "nenhum"), 60)
+	button(m1, "ENTRAR NO TIME", function()
+		M.joinTeam(function(txtv) teamStatus.Text = txtv end)
+	end)
+	toggle(m1, "Forçar visual local (só pra mim)", "teamLocal")
+	button(m1, "IR PRO SPAWN DO TIME", function() M.toSpawn() end)
+	status(m1, "Usa o botão ou prompt que o próprio jogo oferece. Não dispara remotes por conta própria.", 48)
+
+	local m2 = card("TORCIDAS NO SERVIDOR")
+	local countLbl = status(m2, "Toque em atualizar", 60)
+	button(m2, "ATUALIZAR CONTAGEM", function()
+		local out = {}
+		for _, t in ipairs(Teams:GetTeams()) do out[#out + 1] = t.Name .. ": " .. #t:GetPlayers() end
+		countLbl.Text = #out > 0 and table.concat(out, "  |  ") or "Esse jogo não usa Teams"
+	end)
+end
+
+local function buildMundo()
+	local w1 = card("VISUAL")
+	toggle(w1, "Fullbright", "fullbright")
+	toggle(w1, "Sem neblina", "noFog")
+	toggle(w1, "Hora fixa", "clockOn")
+	slider(w1, "Hora do dia", "clockT", 0, 24, 0.5, "h")
+	local w2 = card("SERVIDOR")
+	button(w2, "REENTRAR NO SERVIDOR", function()
+		pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LP) end)
+	end)
+	button(w2, "TROCAR DE SERVIDOR", function()
+		task.spawn(function()
+			pcall(function()
+				local req = request or http_request or (syn and syn.request)
+				if not req then return end
+				local res = req({Url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100", Method = "GET"})
+				local data = HttpService:JSONDecode(res.Body)
+				for _, s in ipairs(data.data or {}) do
+					if s.id ~= game.JobId and s.playing < s.maxPlayers then
+						TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LP)
+						return
+					end
+				end
+			end)
+		end)
+	end)
+end
+
+local function buildJogadores()
+	local j1 = card("ALVO")
+	picker(j1, "Jogador", "plPick", playerNames)
+	button(j1, "TELEPORTAR ATÉ ELE", function()
+		local p = Players:FindFirstChild(S.plPick)
+		local tr = p and p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+		local root = myRoot()
+		if tr and root then root.CFrame = tr.CFrame * CFrame.new(0, 0, 3) end
+	end)
+	button(j1, "ESPECTAR", function() M.spectate(true) end)
+	button(j1, "PARAR DE ESPECTAR", function() M.spectate(false) end)
+end
+
+local optStats
+local function buildOtim()
+	local o0 = card("STATUS")
+	optStats = status(o0, "carregando...", 48)
+
+	local o1 = card("PERFIS RÁPIDOS")
+	button(o1, "MODO LEVE", function() M.preset("leve") end)
+	button(o1, "MODO ULTRA LEVE", function() M.preset("ultra") end)
+	button(o1, "RESTAURAR TUDO", function() M.preset("off") end)
+	button(o1, "LIMPAR MEMÓRIA", function() M.cleanMem() end)
+
+	local o2 = card("GRÁFICOS")
+	toggle(o2, "Qualidade gráfica baixa", "opLow")
+	slider(o2, "Nível de qualidade (1 = pior)", "opQuality", 1, 10, 1)
+	toggle(o2, "Limitar FPS", "opFpsCap")
+	slider(o2, "Limite de FPS", "opCap", 15, 240, 5, " fps")
+	toggle(o2, "Tela preta (economiza GPU/bateria)", "opNo3D")
+
+	local o3 = card("MAPA")
+	toggle(o3, "Sem sombras", "opNoShadow")
+	toggle(o3, "Sem efeitos (bloom, blur, névoa)", "opNoFx")
+	toggle(o3, "Sem partículas/fogo/trails", "opNoPart")
+	toggle(o3, "Desligar luzes", "opNoLight")
+	toggle(o3, "Sem texturas/decals", "opNoTex")
+	toggle(o3, "Materiais lisos (plástico)", "opPlastic")
+	toggle(o3, "Água simples", "opWater")
+	toggle(o3, "Sem grama", "opNoGrass")
+
+	local o4 = card("JOGADORES E SOM")
+	toggle(o4, "Esconder acessórios dos outros", "opHideAcc")
+	toggle(o4, "Mutar sons do mapa", "opNoSound")
+
+	local o5 = card("PAINEL")
+	toggle(o5, "Animações do painel", "uiAnim")
+	toggle(o5, "Mostrar FPS no menu", "uiFps")
+	slider(o5, "Tamanho do painel", "uiScaleMul", 0.6, 1.4, 0.05, "x", function(v) winScale.Scale = uiScale * v end)
+end
+
+makeTab("COMBATE", 1, buildCombate)
+makeTab("ESP", 2, buildEsp)
+makeTab("TROLL", 3, buildTroll)
+makeTab("TORCIDA", 4, buildTorcida)
+makeTab("MUNDO", 5, buildMundo)
+makeTab("JOGADORES", 6, buildJogadores)
+makeTab("OTIMIZAÇÃO", 7, buildOtim)
 
 track({Disconnect = function()
 	alive = false
-	lightRestore()
-	spectate(false)
+	for _, f in ipairs(M.cleanups) do pcall(f) end
 end})
 
 selectTab("COMBATE")
 
 ---------------------------------------------------------------- LOOPS
-local hitAcc, fpsAcc, fpsFrames = 0, 0, 0
+local hitAcc, fpsAcc, fpsFrames, lastFps, statAcc = 0, 0, 0, 60, 0
 track(RunService.Heartbeat:Connect(function(dt)
 	hitAcc = hitAcc + dt
 	if hitAcc >= 0.1 then
 		hitAcc = 0
 		pcall(hitStep)
+		if S.reachOn or reachH then pcall(reachStep) end
 	end
 	pcall(movStep, dt)
 end))
@@ -1588,6 +2204,9 @@ RunService:BindToRenderStep("XitAim", Enum.RenderPriority.Camera.Value + 1, func
 	local now = os.clock()
 	pcall(aimStep, cam, now)
 	pcall(espStep, cam, now)
+	if S.trigOn then pcall(trigStep, cam, now) end
+	if S.clickOn then pcall(clickStep, now) end
+	if S.freecam then pcall(M.fcStep, cam, dt) end
 	if S.fovOn then
 		P(cam, "FieldOfView", S.camFov); fovApplied = true
 	elseif fovApplied then
@@ -1597,14 +2216,24 @@ RunService:BindToRenderStep("XitAim", Enum.RenderPriority.Camera.Value + 1, func
 	if win.Visible then
 		fpsAcc = fpsAcc + dt; fpsFrames = fpsFrames + 1
 		if fpsAcc >= 0.5 then
-			fpsLbl.Text = "FPS " .. math.floor(fpsFrames / fpsAcc + 0.5)
+			lastFps = math.floor(fpsFrames / fpsAcc + 0.5)
+			fpsLbl.Text = "FPS " .. lastFps
 			fpsAcc, fpsFrames = 0, 0
+		end
+		P(fpsLbl, "Visible", S.uiFps)
+		if optStats and pages["OTIMIZAÇÃO"].Visible then
+			statAcc = statAcc + dt
+			if statAcc >= 1 then
+				statAcc = 0
+				optStats.Text = M.statsText(lastFps)
+			end
 		end
 	end
 end)
 
 ---------------------------------------------------------------- UNLOAD
 local function unload()
+	alive = false
 	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
 	pcall(function() RunService:UnbindFromRenderStep("XitAim") end)
 	for part in pairs(saved) do restore(part) end
@@ -1613,12 +2242,17 @@ local function unload()
 	for _, o in pairs(espObjs) do
 		for _, d in ipairs(o.list) do pcall(function() d:Remove() end) end
 	end
+	if aimLineD then pcall(function() aimLineD:Remove() end) end
 	flyClean()
 	pcall(function()
 		local h = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
 		if h then
 			if wsApplied then h.WalkSpeed = origWS or 16 end
 			if jpApplied then h.JumpPower = origJP or 50 end
+			if TR.nfApplied then
+				h:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+				h:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+			end
 		end
 		Workspace.Gravity = origGrav
 		if fovApplied then getCam().FieldOfView = 70 end
