@@ -1,4 +1,4 @@
--- XIT DA FACÇÃO v4.2 | delta | vermelho & preto | TFJ
+-- XIT DA FACÇÃO v4.3 | delta | vermelho & preto | TFJ
 local cloneref = cloneref or function(o) return o end
 local function svc(n) return cloneref(game:GetService(n)) end
 local Players, RunService, UIS, TweenService = svc("Players"), svc("RunService"), svc("UserInputService"), svc("TweenService")
@@ -380,7 +380,7 @@ local function expand(part, size, trans, color)
 	end
 	if part.Size ~= size then part.Size = size end
 	if part.CanCollide then part.CanCollide = false end
-	if not part.Massless then part.Massless = true end
+	if part.Name ~= "HumanoidRootPart" and not part.Massless then part.Massless = true end
 	if trans and part.Transparency ~= trans then part.Transparency = trans end
 	if color then
 		if part.Color ~= color then part.Color = color end
@@ -1016,7 +1016,7 @@ new("TextLabel", {
 	TextXAlignment = Enum.TextXAlignment.Left,
 }, top)
 new("TextLabel", {
-	Text = "TFJ  •  DELTA  •  v4.2", Size = UDim2.fromOffset(200, 14), Position = UDim2.fromOffset(54, 26),
+	Text = "TFJ  •  DELTA  •  v4.3", Size = UDim2.fromOffset(200, 14), Position = UDim2.fromOffset(54, 26),
 	BackgroundTransparency = 1, TextColor3 = C.red, Font = Enum.Font.GothamBold, TextSize = 10,
 	TextXAlignment = Enum.TextXAlignment.Left,
 }, top)
@@ -1097,8 +1097,29 @@ holdBtn("DESCE", 64, function(v) flyDown = v end)
 local sidebar = new("Frame", {Position = UDim2.fromOffset(10, 58), Size = UDim2.new(0, 120, 1, -68), BackgroundColor3 = C.panel, BorderSizePixel = 0}, win)
 corner(sidebar, 10)
 stroke(sidebar, C.line, 1)
-local tabList = new("ScrollingFrame", {Size = UDim2.new(1, 0, 1, -44), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y}, sidebar)
+local tabList = new("ScrollingFrame", {Position = UDim2.fromOffset(0, 58), Size = UDim2.new(1, 0, 1, -102), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y}, sidebar)
 new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, tabList)
+local profile = new("Frame", {Position = UDim2.fromOffset(8, 8), Size = UDim2.new(1, -16, 0, 46), BackgroundColor3 = C.row, BorderSizePixel = 0}, sidebar)
+corner(profile, 8)
+stroke(profile, C.line, 1)
+local avatar = new("ImageLabel", {
+	Position = UDim2.fromOffset(6, 6), Size = UDim2.fromOffset(34, 34), BackgroundColor3 = C.panel, BorderSizePixel = 0,
+	Image = "", ScaleType = Enum.ScaleType.Crop,
+}, profile)
+corner(avatar, 17)
+stroke(avatar, C.red, 1.5)
+new("TextLabel", {
+	Text = LP.Name, Position = UDim2.fromOffset(46, 0), Size = UDim2.new(1, -50, 1, 0), BackgroundTransparency = 1,
+	TextColor3 = WHITE, Font = Enum.Font.GothamBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
+	TextWrapped = true, TextTruncate = Enum.TextTruncate.AtEnd,
+}, profile)
+task.spawn(function()
+	local ok, img = pcall(function()
+		return Players:GetUserThumbnailAsync(LP.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+	end)
+	if ok and img and avatar.Parent then avatar.Image = img end
+end)
+
 new("UIPadding", {PaddingTop = UDim.new(0, 8), PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)}, tabList)
 
 new("Frame", {Size = UDim2.new(1, -16, 0, 1), Position = UDim2.new(0, 8, 1, -42), BackgroundColor3 = C.line, BorderSizePixel = 0}, sidebar)
